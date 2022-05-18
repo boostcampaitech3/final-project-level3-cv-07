@@ -19,26 +19,30 @@ class Derma_dataset(Dataset):
         self.data = self.load_json(data_dir)
         
     
-    def load_json(data_dir):
-        json_list = glob.glob(data_dir + '/JPEGImages/*.json')
-        
-        data = []
-        
+    def load_json(self, path):
+        print('load json files from {}'.format(path))
+        json_list = glob.glob(path + '/JPEGImages/*.json')
+        print('total json files : {}'.format(len(json_list)))
+    
+        data = []    
         for json_file in json_list:
             with open(json_file, 'r') as f:
                 json_data = json.load(f)
             
             file_name = json_data['file_name']
             del json_data['file_name']
-            data.append([data_dir + '/JPEGImages/{}'.format(file_name), json_data])
+            del json_data['part']
+            data.append([path + '/JPEGImages/{}'.format(file_name), json_data])
         
+        print('Data Load Success, Total Data length : {}'.format(len(data)))
         return data
     
     def __len__(self):
         return len(self.data)
     
-    def __getitem__(self, index) -> tuple(torch.Tensor, dict):
+    def __getitem__(self, index):
         y = self.data[index][1]
+        
         
         x = cv2.imread(self.data[index][0])
         x = cv2.cvtColor(x, cv2.COLOR_BGR2RGB)
@@ -46,8 +50,10 @@ class Derma_dataset(Dataset):
         if self.transform is not None:
             x = self.transform(image=x)["image"]
         else:
-            totensor = transforms.ToTensor()
-            x = totensor(x)
-            
-        
+            resizer = A.Resize(1024, 1024)
+            totensor = ToTensorV2()
+            x = resizer(image=x)['image']
+            x = totensor(image=x)['image']
+            x = x.float()
+
         return x, y

@@ -6,6 +6,8 @@
 # LICENSE file in the root directory of this source tree.
 
 
+from distutils.command.build import build
+from operator import mod
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -67,7 +69,7 @@ class ConvNeXt(nn.Module):
                  layer_scale_init_value=1e-6, head_init_scale=1.,
                  ):
         super().__init__()
-
+        self.last_dim = dims[-1]
         self.downsample_layers = nn.ModuleList() # stem and 3 intermediate downsampling conv layers
         stem = nn.Sequential(
             nn.Conv2d(in_chans, dims[0], kernel_size=4, stride=4),
@@ -98,6 +100,9 @@ class ConvNeXt(nn.Module):
         self.apply(self._init_weights)
         self.head.weight.data.mul_(head_init_scale)
         self.head.bias.data.mul_(head_init_scale)
+        
+    def get_last_dim(self):
+        return self.last_dim
 
     def _init_weights(self, m):
         if isinstance(m, (nn.Conv2d, nn.Linear)):
@@ -199,3 +204,50 @@ def convnext_xlarge(pretrained=False, in_22k=False, **kwargs):
         checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
         model.load_state_dict(checkpoint["model"])
     return model
+
+class Convnext_custom(nn.Module):
+    def __init__(self, model_type):
+        super().__init__()
+        
+        self.model = self.build_model(model_type)
+        self.last_dim = self.model.get_last_dim()
+        self.head_list = nn.ModuleList()
+        self.head_o = nn.Linear(self.model.get_last_dim(), 5)
+        self.head_s = nn.Linear(self.model.get_last_dim(), 5)
+        self.head_p = nn.Linear(self.model.get_last_dim(), 5)
+        self.head_w = nn.Linear(self.model.get_last_dim(), 5)
+        self.head_h = nn.Linear(self.model.get_last_dim(), 5)
+        
+        self.head_list.append(self.head_o)
+        self.head_list.append(self.head_s)
+        self.head_list.append(self.head_p)
+        self.head_list.append(self.head_w)
+        self.head_list.append(self.head_h)
+
+    def build_model(self, m_type) -> ConvNeXt:
+        if m_type == 'tiny':
+            model = convnext_tiny()
+            return model
+        elif m_type == 'small':
+            model = convnext_small()
+            return model
+        elif m_type == 'base':
+            model = convnext_base()
+            return model
+        elif m_type == 'large':
+            model = convnext_large()
+            return model
+        else:
+            model = convnext_xlarge()
+            return model
+        
+    def forward(self, x):
+        feat = self.model.forward_features(x)
+        
+        pred_list = []
+        for head in self.head_list:
+            pred = head(feat)
+            pred_list.append(pred)
+        
+        return pred_list
+    

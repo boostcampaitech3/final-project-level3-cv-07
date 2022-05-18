@@ -1,12 +1,12 @@
-from h11 import Data
+from email.quoprimime import header_decode
 from data.dataset import Derma_dataset
-from model.model import *
-from model.losses import FocalLoss
+from model.model import Convnext_custom
+from model.losses import FocalLoss, Derma_FocalLoss
 from model.metric import ArcMarginProduct
-from torch.utils.data.dataloader import DataLoader
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 import os
 import torch
-
 import torch.nn.functional as F
 import numpy as np
 import random
@@ -23,19 +23,52 @@ def save_model(model, save_path, name, iter_cnt):
     torch.save(model.state_dict(), save_name)
     return save_name
 
-BATCH_SIZE = 16
+BATCH_SIZE = 6
+NUM_CLASSES = 5
+EPOCH = 50
 
 device = torch.device('cuda')
 
-train_dataset = Derma_dataset('../data/train', transform=None)
-val_dataset = Derma_dataset('../data/val', transform=None)
+train_dataset = Derma_dataset('/opt/ml/input/data/train', transform=None)
+val_dataset = Derma_dataset('/opt/ml/input/data/val', transform=None)
 
 train_dataloader = DataLoader(train_dataset, 
-                              BATCH_SIZE, 
+                              batch_size = BATCH_SIZE, 
                               shuffle=True,
                               num_workers=4)
 
 val_dataloader = DataLoader(val_dataset,
-                            BATCH_SIZE,
+                            batch_size = BATCH_SIZE,
                             num_workers=4)
 
+
+model = Convnext_custom('small')
+
+criterion = Derma_FocalLoss(gamma=2).to(device)
+
+# metric_fc = ArcMarginProduct(model.get_last_dim(), NUM_CLASSES)
+model.to(device)
+
+optimizer = torch.optim.AdamW(model.parameters(),
+                              lr=0.0001, weight_decay=0.05)
+
+
+for i in range(EPOCH):
+    model.train()
+    for idx, data in tqdm(enumerate(train_dataloader)):
+        X, Ys = data
+        X = X.to(device)
+        
+        pred_list = model(X)
+        label_list = [Ys[cat].to(device) for cat in Ys.keys()]
+        
+        batch_loss = 0
+
+        batch_loss, cat_losses = criterion(pred_list, label_list)
+        
+        optimizer.zero_grad()
+        batch_loss.backward()
+        optimizer.step()
+
+        
+        
