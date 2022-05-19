@@ -3,6 +3,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+import torch.optim as optim
 import random
 from tqdm import tqdm
 import argparse
@@ -38,11 +39,11 @@ def set_seed(seed : int) -> None:
     np.random.seed(seed)
     random.seed(seed)
   
-def save_model(model, save_path, epoch_cnt, max_ckpt=None):
+def save_model(model, save_path, epoch_cnt, max_ckpt=None, type="epoch"):
     if max_ckpt is not None:
         check_pth(save_path, max_ckpt)
     os.makedirs(save_path, exist_ok=True)
-    save_name = os.path.join(save_path, 'epoch' + str(epoch_cnt) + '.pth')
+    save_name = os.path.join(save_path, type + str(epoch_cnt) + '.pth')
     torch.save(model.state_dict(), save_name)
     return save_name
 
@@ -108,6 +109,10 @@ def main():
     optimizer = torch.optim.AdamW(model.parameters(),
                                 lr=0.001, weight_decay=0.05)
 
+    scheduler = optim.lr_scheduler.StepLR(optimizer=optimizer, step_size=10, gamma=0.5)
+
+    best_accuracy = 0
+
     for epoch in range(EPOCH):
         model.train()
         
@@ -143,7 +148,9 @@ def main():
             if ((idx+1) % arg.log_interval) == 0:
                 print(f"  Iter[{idx+1} / {len(train_dataloader)}] | Train_Accuracy: {train_total_acc:.4f} | Train_Loss: {train_total_loss:.4f}")
 
-        if arg.save_path is not None & ((epoch + 1) % arg.save_interval == 0):
+        scheduler.step()
+
+        if (arg.save_path is not None) & ((epoch + 1) % arg.save_interval == 0):
             save_model(model, arg.save_path, epoch+1, arg.max_ckpt)
             
         model.eval()
@@ -194,7 +201,7 @@ def main():
 
             if val_total_acc > best_accuracy:
                 best_accuracy = val_total_acc
-                save_model(model=model, save_path=os.path.join(arg.save_path, "best"), name="best", iter_cnt=best_accuracy, max_ckpt=3)
+                save_model(model, os.path.join(arg.save_path, "best"), best_accuracy, arg.max_ckpt, "best")
                 print("*** Save the best model ***\n")
 
 if __name__ == '__main__':
