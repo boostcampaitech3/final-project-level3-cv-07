@@ -73,7 +73,7 @@ val_dataloader = DataLoader(val_dataset,
                             drop_last=True)
 
 
-model = Convnext_custom('small')
+model = Convnext_custom('tiny')
 
 criterion = Derma_FocalLoss(gamma=2).to(device)
 
@@ -81,7 +81,7 @@ criterion = Derma_FocalLoss(gamma=2).to(device)
 model.to(device)
 
 optimizer = torch.optim.AdamW(model.parameters(),
-                              lr=0.0001, weight_decay=0.05)
+                              lr=0.001, weight_decay=0.05)
 
 
 
@@ -118,7 +118,7 @@ for epoch in range(EPOCH):
 
         # train accuracy와 loss에서는 그냥 50iter 마다 그때의 acc, loss 출력
         if ((idx+1) % 50) == 0:
-            print(f"\nIter[{idx+1} / {len(train_dataloader)}] | Train_Accuracy: {train_total_acc:.4f} | Train_Loss: {train_total_loss:.4f}\n")
+            print(f"  Iter[{idx+1} / {len(train_dataloader)}] | Train_Accuracy: {train_total_acc:.4f} | Train_Loss: {train_total_loss:.4f}")
  
     model.eval()
 
@@ -156,8 +156,7 @@ for epoch in range(EPOCH):
     val_total_acc = (val_oil_acc + val_sen_acc + val_pig_acc + val_wri_acc + val_hyd_acc) / 5
     val_total_loss = (val_oil_loss + val_sen_loss + val_pig_loss + val_wri_loss + val_hyd_loss) / 5
 
-    print(f"Epoch [{epoch+1}/{EPOCH}]")
-    print(f"Val Total Loss {val_total_loss:.4f} | Val Total Acc {val_total_acc:.4f} ")
+    print(f"\nEpoch [{epoch+1}/{EPOCH}]  Val Total Loss {val_total_loss:.4f} | Val Total Acc {val_total_acc:.4f}")
     print("ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ")
     print(f"| Oil Acc {val_oil_acc:.4f} | Oil Loss {val_oil_loss:.4f} |")
     print(f"| Sen Acc {val_sen_acc:.4f} | Sen Loss {val_sen_loss:.4f} |")
