@@ -39,7 +39,7 @@ class FocalLoss(nn.Module):
 
     def forward(self, input_tensor, target_tensor):
         log_prob = F.log_softmax(input_tensor, dim=-1)
-        log_prob = torch.cat((log_prob,torch.zeros(log_prob.size()[0],1)),1)
+        log_prob = torch.cat((log_prob,torch.zeros(log_prob.size()[0],1).to('cuda')),1)
         prob = torch.exp(log_prob)
         target_tensor = torch.where(target_tensor < 0, 5, target_tensor)
         return F.nll_loss(
