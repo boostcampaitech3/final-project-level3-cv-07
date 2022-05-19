@@ -57,10 +57,18 @@ class Derma_dataset(Dataset):
         if self.transform is not None:
             x = self.transform(image=x)["image"]
         else:
-            resizer = A.Resize(1024, 1024)
-            totensor = ToTensorV2()
-            x = resizer(image=x)['image']
-            x = totensor(image=x)['image']
+            default_transform = A.Compose([
+                A.PadIfNeeded(
+                    border_mode= cv2.BORDER_CONSTANT,
+                    value=0),
+                A.HorizontalFlip(),
+                A.Normalize(
+                    mean=(0.65490196, 0.53333333,0.45882353),
+                    std=(0.18431373, 0.16078431, 0.14901961)),
+                ToTensorV2()
+            ])
+            if x.shape[0] > 1024:
+                x = A.Crop()(image=x)['image']
+            x = default_transform(image=x)['image']
             x = x.float()
-
         return x, y
