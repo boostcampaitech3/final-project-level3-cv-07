@@ -111,6 +111,8 @@ def main():
 
     scheduler = optim.lr_scheduler.StepLR(optimizer=optimizer, step_size=10, gamma=0.5)
 
+    best_accuracy = 0
+
     for epoch in range(EPOCH):
         model.train()
         
@@ -199,7 +201,7 @@ def main():
 
             if val_total_acc > best_accuracy:
                 best_accuracy = val_total_acc
-                save_model(model=model, save_path=os.path.join(arg.save_path, "best"), name="best", iter_cnt=best_accuracy, max_ckpt=3)
+                save_model(model=model, save_path=os.path.join(arg.save_path, "best"), name="best", iter_cnt=best_accuracy, max_ckpt=arg.max_ckpt)
                 print("*** Save the best model ***\n")
 
 if __name__ == '__main__':
