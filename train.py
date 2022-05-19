@@ -202,7 +202,7 @@ def main():
 
             if val_total_acc > best_accuracy:
                 best_accuracy = val_total_acc
-                save_model(model, os.path.join(arg.save_path, "best"), best_accuracy, arg.max_ckpt, "best")
+                save_model(model, os.path.join(arg.save_path, "best"), epoch+1, 1, "best")
                 print("*** Save the best model ***\n")
 
 if __name__ == '__main__':
