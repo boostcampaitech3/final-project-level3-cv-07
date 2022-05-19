@@ -21,9 +21,9 @@ class Derma_FocalLoss(nn.Module):
         
         loss_oil = self.l_oil(input[0], targets[0])
         loss_sen = self.l_sen(input[1], targets[1])
-        loss_pig = self.l_sen(input[2], targets[2])
-        loss_wri = self.l_sen(input[3], targets[3])
-        loss_hyd = self.l_sen(input[4], targets[4])
+        loss_pig = self.l_pig(input[2], targets[2])
+        loss_wri = self.l_wri(input[3], targets[3])
+        loss_hyd = self.l_hyd(input[4], targets[4])
         
         total_loss = loss_oil + loss_sen + loss_pig + loss_wri + loss_hyd
         
