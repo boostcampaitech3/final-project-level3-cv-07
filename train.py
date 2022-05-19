@@ -1,30 +1,31 @@
+import os
+import numpy as np
+import torch
+import torch.nn.functional as F
+from torch.utils.data import DataLoader
+import random
+from tqdm import tqdm
+import argparse
+
 from data.dataset import Derma_dataset
 from model.model import Convnext_custom
 from model.losses import FocalLoss, Derma_FocalLoss
 from model.metric import ArcMarginProduct
-from torch.utils.data import DataLoader
-from tqdm import tqdm
-import argparse
-import os
-import torch
-import torch.nn.functional as F
-import numpy as np
-import random
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a Classfier')
     parser.add_argument('--epoch', type=int, default=50, help='training epoch setting')
     parser.add_argument('--batch-size', type=int, default=8, help='size of mini batch')
     parser.add_argument('--val-interval', type=int, default=1, help='validation interval')
-    parser.add_argument('--model size', choices=['tiny', 'small', 'base', 'large',' xlarge'], default='tiny', 
+    parser.add_argument('--log-interval', type=int, default=50, help='training log interval setting')
+    parser.add_argument('--model-size', choices=['tiny', 'small', 'base', 'large',' xlarge'], default='tiny', 
                         help='model size config, ex) tiny, small, base, large, xlarge')
     parser.add_argument('--save-path', help='the dir to save model')
     parser.add_argument('--max-ckpt', type=int, default=3, help='maximum keep ckpt files in save_dir')
     parser.add_argument('--load-from', help='the checkpoint file to load weights from')
     parser.add_argument('--no-validate', help='whether not to evaluate the validation set during training')
     parser.add_argument('--seed', type=int, default=2022, help='random Seed setting')
-    
-
 
 def set_seed(seed : int) -> None:
     torch.manual_seed(seed)
@@ -38,9 +39,24 @@ def save_model(model, save_path, name, iter_cnt):
     torch.save(model.state_dict(), save_name)
     return save_name
 
+class AverageMeter(object):
+  def __init__(self):
+      self.reset()
+
+  def reset(self):
+    self.val = 0
+    self.avg = 0
+    self.sum = 0
+    self.count = 0
+
+  def update(self, val, n=1):
+    self.val = val
+    self.sum += val * n
+    self.count += n
+    self.avg = self.sum / self.count
+
 def main():
     arg = parse_args()
-    
     set_seed(arg.seed)
 
     BATCH_SIZE = arg.batch_size
@@ -55,77 +71,104 @@ def main():
     train_dataloader = DataLoader(train_dataset, 
                                 batch_size = BATCH_SIZE, 
                                 shuffle=True,
-                                num_workers=4)
+                                num_workers=4,
+                                drop_last=True)
 
     val_dataloader = DataLoader(val_dataset,
                                 batch_size = BATCH_SIZE,
-                                num_workers=4)
+                                num_workers=4,
+                                drop_last=True)
 
 
-    model = Convnext_custom('tiny')
+    model = Convnext_custom(arg.model_size)
 
     criterion = Derma_FocalLoss(gamma=2).to(device)
 
     # metric_fc = ArcMarginProduct(model.get_last_dim(), NUM_CLASSES)
     model.to(device)
 
-
     optimizer = torch.optim.AdamW(model.parameters(),
                                 lr=0.001, weight_decay=0.05)
 
-    cat_list = ['oil', 'sensitive', 'pigmentation', 'wrinkle', 'hydration']
 
-    for i in range(EPOCH):
+    for epoch in range(EPOCH):
         model.train()
-        pbar = tqdm(enumerate(train_dataloader), unit='batch')
-        epoch_loss = {cat : torch.tensor([]) for cat in cat_list}
-        epoch_acc = {cat : torch.tensor([]) for cat in cat_list}
         
-        for idx, data in pbar:
+        for idx, data in tqdm(enumerate(train_dataloader), unit='batch'):
             X, Ys = data
             X = X.to(device)
             
+            label_list = {cat: Ys[cat].to(device) for cat in Ys.keys()}
+            pred_list = model(X)
             
-            pred_dict = model(X)
-            acc_list = []
-            
-            for cat in cat_list:
-                pred = torch.argmax(pred_dict[cat], dim=-1)
-                gt_y = Ys[cat].to(device)
-                
-                pred = pred[gt_y != 5]
-                gt_y = gt_y[gt_y != 5]
-                
-                if pred.shape[0] > 0:
-                    corr = torch.sum(pred.data == gt_y.data) / pred.shape[0]
-                    acc_list.append(corr)
-                else:
-                    corr = torch.tensor([-1])
-                    acc_list.append(corr)
-                
-            batch_loss, cat_losses = criterion(pred_dict, Ys)
+            batch_loss = 0
+
+            batch_loss, cat_losses = criterion(pred_list, label_list)
             
             optimizer.zero_grad()
             batch_loss.backward()
             optimizer.step()
 
-            for idx, cat in enumerate(cat_list):
-                epoch_loss[cat] += cat_losses[idx].item()
-                if acc_list[idx].item() != -1:
-                    epoch_acc[cat] += acc_list[idx].item()
-            
-            pbar.set_postfix(total_loss=batch_loss.item(), 
-                            oil_loss=cat_losses[0].item(), sen_loss=cat_losses[1].item(),
-                            pig_loss=cat_losses[2].item(), wri_loss=cat_losses[3].item(), hyd_loss=cat_losses[4].item())
-            print('\nOli_Acc : {:0.4f} | Sen_Acc : {:0.4f}\nPig_Acc : {:0.4f} | Wri_Acc : {:0.4f} | Hyd_Acc : {:0.4f}'.format(acc_list[0].item(), acc_list[1].item(), acc_list[2].item(), acc_list[3].item(), acc_list[4].item()))
+            train_pred_list = {cat: torch.argmax(pred_list[cat], dim=-1) for cat in Ys.keys()}
 
-        print('=' * 25 + ' Epoch End! ' + '=' * 25)
-        print('Total Loss : {:0.4f} | Loss_Oil : {:0.4f} | Loss_Sen : {:0.4f} | Loss_Pig : {:0.4f} | Loss_Wri : {:0.4f} | Loss_Hyd : {:0.4f}'.format(
-            sum(epoch_loss.values()) / len(train_dataloader), epoch_loss['oil'] / len(train_dataloader), epoch_loss['sensitive'] / len(train_dataloader),
-            epoch_loss['pigmentation'] / len(train_dataloader), epoch_loss['wrinkle'] / len(train_dataloader), epoch_loss['hydration'] / len(train_dataloader)
-        ))
-        print('Total Acc  : {:0.4f} | Acc_Oil  : {:0.4f} | Acc_Sen  : {:0.4f} | Acc_Pig  : {:0.4f} | Acc_Wri  : {:0.4f} | Acc_Hyd  : {:0.4f}'.format(
-            sum(epoch_acc.values()) / len(train_dataloader) / 5, epoch_acc['oil'] / len(train_dataloader), epoch_acc['sensitive'] / len(train_dataloader),
-            epoch_acc['pigmentation'] / len(train_dataloader), epoch_acc['wrinkle'] / len(train_dataloader), epoch_acc['hydration'] / len(train_dataloader)
-        ))
-        print('=' * 70)
+            acc_list = []
+            for cat in Ys.keys():
+                exept_cnt = (label_list[cat]==5).sum().item()
+                if exept_cnt == BATCH_SIZE:
+                    continue
+                acc = (train_pred_list[cat] == label_list[cat]).sum().item() / (BATCH_SIZE - exept_cnt)
+                acc_list.append(acc)
+
+            train_total_acc = np.mean(acc_list)
+            train_total_loss = batch_loss
+
+            # train accuracy와 loss에서는 그냥 50iter 마다 그때의 acc, loss 출력
+            if ((idx+1) % arg.log_interval) == 0:
+                print(f"\nIter[{idx+1} / {len(train_dataloader)}] | Train_Accuracy: {train_total_acc:.4f} | Train_Loss: {train_total_loss:.4f}\n")
+    
+        model.eval()
+
+        val_total_acc = 0
+        val_total_loss = 0
+        val_oil_acc, val_sen_acc, val_pig_acc, val_wri_acc, val_hyd_acc = AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter()
+        val_oil_loss, val_sen_loss, val_pig_loss, val_wri_loss, val_hyd_loss = AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter()
+        
+        if (epoch % arg.val_interval) == 0:
+            for (x, Y) in val_dataloader:
+                x = x.to(device)
+                
+                label_list = {cat: Ys[cat].to(device) for cat in Ys.keys()}
+                with torch.no_grad():
+                    pred_list = model(X)
+                
+                batch_loss, cat_losses = criterion(pred_list, label_list)
+                
+                pred_list = {cat: torch.argmax(pred_list[cat], dim=-1) for cat in Ys.keys()}
+                
+                val_acc_list = [val_oil_acc, val_sen_acc, val_pig_acc, val_wri_acc, val_hyd_acc]
+                val_loss_list = [val_oil_loss, val_sen_loss, val_pig_loss, val_wri_loss, val_hyd_loss]
+
+                acc_list = []
+                for i, cat in enumerate(Ys.keys()):
+                    exept_cnt = (label_list[cat]==5).sum().item()
+                    if exept_cnt == BATCH_SIZE:
+                        continue
+                    acc = (pred_list[cat] == label_list[cat]).sum().item() / (BATCH_SIZE - exept_cnt)
+                    val_acc_list[i].update(acc, BATCH_SIZE - exept_cnt)
+                    val_loss_list[i].update(cat_losses[i], BATCH_SIZE - exept_cnt)
+
+            val_oil_acc, val_sen_acc, val_pig_acc, val_wri_acc, val_hyd_acc = val_oil_acc.avg, val_sen_acc.avg, val_pig_acc.avg, val_wri_acc.avg, val_hyd_acc.avg
+            val_oil_loss, val_sen_loss, val_pig_loss, val_wri_loss, val_hyd_loss = val_oil_loss.avg, val_sen_loss.avg, val_pig_loss.avg, val_wri_loss.avg, val_hyd_loss.avg
+
+            val_total_acc = (val_oil_acc + val_sen_acc + val_pig_acc + val_wri_acc + val_hyd_acc) / 5
+            val_total_loss = (val_oil_loss + val_sen_loss + val_pig_loss + val_wri_loss + val_hyd_loss) / 5
+
+            print(f"Epoch [{epoch+1}/{EPOCH}]")
+            print(f"Val Total Loss {val_total_loss:.4f} | Val Total Acc {val_total_acc:.4f} ")
+            print("ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ")
+            print(f"| Oil Acc {val_oil_acc:.4f} | Oil Loss {val_oil_loss:.4f} |")
+            print(f"| Sen Acc {val_sen_acc:.4f} | Sen Loss {val_sen_loss:.4f} |")
+            print(f"| Pig Acc {val_pig_acc:.4f} | Pig Loss {val_pig_loss:.4f} |")
+            print(f"| Wri Acc {val_wri_acc:.4f} | Wri Loss {val_wri_loss:.4f} |")
+            print(f"| Hyd Acc {val_hyd_acc:.4f} | Hyd Loss {val_hyd_loss:.4f} |")
+            print("ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ\n")
