@@ -17,11 +17,11 @@ class Derma_FocalLoss(nn.Module):
         
     def forward(self, input, targets):
         
-        loss_oil = self.l_oil(input[0], targets[0])
-        loss_sen = self.l_sen(input[1], targets[1])
-        loss_pig = self.l_pig(input[2], targets[2])
-        loss_wri = self.l_wri(input[3], targets[3])
-        loss_hyd = self.l_hyd(input[4], targets[4])
+        loss_oil = self.l_oil(input['oil'], targets['oil'].to('cuda'))
+        loss_sen = self.l_sen(input['sensitive'], targets['sensitive'].to('cuda'))
+        loss_pig = self.l_pig(input['pigmentation'], targets['pigmentation'].to('cuda'))
+        loss_wri = self.l_wri(input['wrinkle'], targets['wrinkle'].to('cuda'))
+        loss_hyd = self.l_hyd(input['hydration'], targets['hydration'].to('cuda'))
         
         total_loss = loss_oil + loss_sen + loss_pig + loss_wri + loss_hyd
         
@@ -37,12 +37,11 @@ class FocalLoss(nn.Module):
 
     def forward(self, input_tensor, target_tensor):
         log_prob = F.log_softmax(input_tensor, dim=-1)
-        log_prob = torch.cat((log_prob,torch.zeros(log_prob.size()[0],1).to('cuda')),1)
         prob = torch.exp(log_prob)
-        target_tensor = torch.where(target_tensor < 0, 5, target_tensor)
         return F.nll_loss(
             ((1 - prob) ** self.gamma) * log_prob,
             target_tensor,
             weight=self.weight,
-            reduction=self.reduction
+            reduction=self.reduction,
+            ignore_index=5
         )
