@@ -111,7 +111,7 @@ def main():
     for epoch in range(EPOCH):
         model.train()
         
-        for idx, data in tqdm(enumerate(train_dataloader), unit='batch'):
+        for idx, data in tqdm(enumerate(train_dataloader), unit='Iter'):
             X, Ys = data
             X = X.to(device)
             
@@ -143,7 +143,7 @@ def main():
             if ((idx+1) % arg.log_interval) == 0:
                 print(f"  Iter[{idx+1} / {len(train_dataloader)}] | Train_Accuracy: {train_total_acc:.4f} | Train_Loss: {train_total_loss:.4f}")
 
-        if arg.save_path is not None & (epoch + 1) % arg.save_interval == 0:
+        if arg.save_path is not None & ((epoch + 1) % arg.save_interval == 0):
             save_model(model, arg.save_path, epoch+1, arg.max_ckpt)
             
         model.eval()
@@ -153,13 +153,13 @@ def main():
         val_oil_acc, val_sen_acc, val_pig_acc, val_wri_acc, val_hyd_acc = AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter()
         val_oil_loss, val_sen_loss, val_pig_loss, val_wri_loss, val_hyd_loss = AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter()
 
-        if arg.no_validate & (epoch + 1) % arg.val_interval == 0:
+        if arg.no_validate & ((epoch + 1) % arg.val_interval == 0):
             for (x, Ys) in val_dataloader:
                 x = x.to(device)
                 
                 label_list = {cat: Ys[cat].to(device) for cat in Ys.keys()}
                 with torch.no_grad():
-                    pred_list = model(X)
+                    pred_list = model(x)
                 
                 batch_loss, cat_losses = criterion(pred_list, label_list)
                 
