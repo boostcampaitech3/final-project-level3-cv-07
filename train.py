@@ -191,5 +191,5 @@ def main():
             print(f"| Hyd Acc {val_hyd_acc:.4f} | Hyd Loss {val_hyd_loss:.4f} |")
             print("ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ\n")
 
-if __name__ is '__main__':
+if __name__ == '__main__':
     main()
