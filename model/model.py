@@ -244,10 +244,10 @@ class Convnext_custom(nn.Module):
     def forward(self, x):
         feat = self.model.forward_features(x)
         
-        pred_list = []
-        for head in self.head_list:
+        pred_dict = {}
+        for head, cat in zip(self.head_list, ['oil', 'sensitive', 'pigmentation', 'wrinkle', 'hydration']):
             pred = head(feat)
-            pred_list.append(pred)
+            pred_dict[cat] = pred
         
-        return pred_list
+        return pred_dict
     

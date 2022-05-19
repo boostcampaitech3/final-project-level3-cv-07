@@ -1,15 +1,28 @@
-from email.quoprimime import header_decode
+import os
+import numpy as np
+import torch
+import torch.nn.functional as F
+from torch.utils.data import DataLoader
+import random
+from tqdm import tqdm
+import argparse
+
 from data.dataset import Derma_dataset
 from model.model import Convnext_custom
 from model.losses import FocalLoss, Derma_FocalLoss
 from model.metric import ArcMarginProduct
-from torch.utils.data import DataLoader
-from tqdm import tqdm
-import os
-import torch
-import torch.nn.functional as F
-import numpy as np
-import random
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='Train a Classfier')
+    parser.add_argument('--epoch', type=int, default=50, help='training epoch setting')
+    parser.add_argument('--val-interval', type=int, default=1, help='validation interval')
+    parser.add_argument('--model size', type=str, default='tiny', help='model size config, ex) tiny, small, base, large, xlarge')
+    parser.add_argument('--save-path', help='the dir to save model')
+    parser.add_argument('--max_ckpt', type=int, default=3, help='maximum keep ckpt files in save_dir')
+    parser.add_argument('--load-from', help='the checkpoint file to load weights from')
+    parser.add_argument('--no-validate', help='whether not to evaluate the validation set during training')
+    parser.add_argument('--seed', type=int, default=2022, help='random Seed setting')
 
 def set_seed(seed : int) -> None:
     torch.manual_seed(seed)
@@ -72,15 +85,15 @@ optimizer = torch.optim.AdamW(model.parameters(),
 
 
 
-for i in range(EPOCH):
+for epoch in range(EPOCH):
     model.train()
     
-    for idx, data in tqdm(enumerate(train_dataloader)):
+    for idx, data in tqdm(enumerate(train_dataloader), unit='batch'):
         X, Ys = data
         X = X.to(device)
         
+        label_list = {cat: Ys[cat].to(device) for cat in Ys.keys()}
         pred_list = model(X)
-        label_list = [Ys[cat].to(device) for cat in Ys.keys()]
         
         batch_loss = 0
 
@@ -90,14 +103,22 @@ for i in range(EPOCH):
         batch_loss.backward()
         optimizer.step()
 
-        train_pred_list = [torch.argmax(pred_list[i], dim=-1) for i in range(len(pred_list))]
-        train_oil_acc = (train_pred_list[0] == label_list[0]).sum().item() / BATCH_SIZE
-        train_sen_acc = (train_pred_list[1] == label_list[1]).sum().item() / BATCH_SIZE
-        train_pig_acc = (train_pred_list[2] == label_list[2]).sum().item() / BATCH_SIZE
-        train_wri_acc = (train_pred_list[3] == label_list[3]).sum().item() / BATCH_SIZE
-        train_hyd_acc = (train_pred_list[4] == label_list[4]).sum().item() / BATCH_SIZE
-        train_total_acc = (train_oil_acc + train_sen_acc + train_pig_acc + train_wri_acc + train_hyd_acc) / 5
+        train_pred_list = {cat: torch.argmax(pred_list[cat], dim=-1) for cat in Ys.keys()}
+
+        acc_list = []
+        for cat in Ys.keys():
+            exept_cnt = (label_list[cat]==5).sum().item()
+            if exept_cnt == BATCH_SIZE:
+                continue
+            acc = (train_pred_list[cat] == label_list[cat]).sum().item() / (BATCH_SIZE - exept_cnt)
+            acc_list.append(acc)
+
+        train_total_acc = np.mean(acc_list)
         train_total_loss = batch_loss
+
+        # train accuracy와 loss에서는 그냥 50iter 마다 그때의 acc, loss 출력
+        if ((idx+1) % 50) == 0:
+            print(f"\nIter[{idx+1} / {len(train_dataloader)}] | Train_Accuracy: {train_total_acc:.4f} | Train_Loss: {train_total_loss:.4f}\n")
  
     model.eval()
 
@@ -109,51 +130,33 @@ for i in range(EPOCH):
     for (x, Y) in val_dataloader:
         x = x.to(device)
         
-        label_list = [Y[cat].to(device) for cat in Y.keys()]
+        label_list = {cat: Ys[cat].to(device) for cat in Ys.keys()}
         with torch.no_grad():
             pred_list = model(X)
         
         batch_loss, cat_losses = criterion(pred_list, label_list)
-
-        pred_label = [torch.argmax(pred_list[i], dim=-1) for i in range(len(pred_list))]
         
+        pred_list = {cat: torch.argmax(pred_list[cat], dim=-1) for cat in Ys.keys()}
+        
+        val_acc_list = [val_oil_acc, val_sen_acc, val_pig_acc, val_wri_acc, val_hyd_acc]
+        val_loss_list = [val_oil_loss, val_sen_loss, val_pig_loss, val_wri_loss, val_hyd_loss]
 
-        oil_acc = (pred_label[0] == label_list[0]).sum().item() / BATCH_SIZE
-        sen_acc = (pred_label[1] == label_list[1]).sum().item() / BATCH_SIZE
-        pig_acc = (pred_label[2] == label_list[2]).sum().item() / BATCH_SIZE
-        wri_acc = (pred_label[3] == label_list[3]).sum().item() / BATCH_SIZE
-        hyd_acc = (pred_label[4] == label_list[4]).sum().item() / BATCH_SIZE
-        total_acc = (oil_acc + sen_acc + pig_acc + wri_acc + hyd_acc) / 5
-        oil_loss, sen_loss, pig_loss, wri_loss, hyd_loss = cat_losses
+        acc_list = []
+        for i, cat in enumerate(Ys.keys()):
+            exept_cnt = (label_list[cat]==5).sum().item()
+            if exept_cnt == BATCH_SIZE:
+                continue
+            acc = (pred_list[cat] == label_list[cat]).sum().item() / (BATCH_SIZE - exept_cnt)
+            val_acc_list[i].update(acc, BATCH_SIZE - exept_cnt)
+            val_loss_list[i].update(cat_losses[i], BATCH_SIZE - exept_cnt)
 
-        val_oil_acc.update(oil_acc, BATCH_SIZE)
-        val_sen_acc.update(sen_acc, BATCH_SIZE)
-        val_pig_acc.update(pig_acc, BATCH_SIZE)
-        val_wri_acc.update(wri_acc, BATCH_SIZE)
-        val_hyd_acc.update(hyd_acc, BATCH_SIZE)
-
-        val_oil_loss.update(oil_loss, BATCH_SIZE)
-        val_sen_loss.update(sen_loss, BATCH_SIZE)
-        val_pig_loss.update(pig_loss, BATCH_SIZE)
-        val_wri_loss.update(wri_loss, BATCH_SIZE)
-        val_hyd_loss.update(hyd_loss, BATCH_SIZE)
-
-    val_oil_acc = val_oil_acc.avg
-    val_sen_acc = val_sen_acc.avg
-    val_pig_acc = val_pig_acc.avg
-    val_wri_acc = val_wri_acc.avg
-    val_hyd_acc = val_hyd_acc.avg
-
-    val_oil_loss = val_oil_loss.avg
-    val_sen_loss = val_sen_loss.avg
-    val_pig_loss = val_pig_loss.avg
-    val_wri_loss = val_wri_loss.avg
-    val_hyd_loss = val_hyd_loss.avg
+    val_oil_acc, val_sen_acc, val_pig_acc, val_wri_acc, val_hyd_acc = val_oil_acc.avg, val_sen_acc.avg, val_pig_acc.avg, val_wri_acc.avg, val_hyd_acc.avg
+    val_oil_loss, val_sen_loss, val_pig_loss, val_wri_loss, val_hyd_loss = val_oil_loss.avg, val_sen_loss.avg, val_pig_loss.avg, val_wri_loss.avg, val_hyd_loss.avg
 
     val_total_acc = (val_oil_acc + val_sen_acc + val_pig_acc + val_wri_acc + val_hyd_acc) / 5
     val_total_loss = (val_oil_loss + val_sen_loss + val_pig_loss + val_wri_loss + val_hyd_loss) / 5
 
-    print(f"Epoch [{i}/{EPOCH}] | Train Total Loss {train_total_loss:.4f} | Train Total Acc {train_total_acc:.4f} ")
+    print(f"Epoch [{epoch+1}/{EPOCH}]")
     print(f"Val Total Loss {val_total_loss:.4f} | Val Total Acc {val_total_acc:.4f} ")
     print("ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ")
     print(f"| Oil Acc {val_oil_acc:.4f} | Oil Loss {val_oil_loss:.4f} |")
@@ -161,4 +164,4 @@ for i in range(EPOCH):
     print(f"| Pig Acc {val_pig_acc:.4f} | Pig Loss {val_pig_loss:.4f} |")
     print(f"| Wri Acc {val_wri_acc:.4f} | Wri Loss {val_wri_loss:.4f} |")
     print(f"| Hyd Acc {val_hyd_acc:.4f} | Hyd Loss {val_hyd_loss:.4f} |")
-    print("ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ")
+    print("ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ\n")
