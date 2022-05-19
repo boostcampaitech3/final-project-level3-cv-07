@@ -16,8 +16,6 @@ class Derma_FocalLoss(nn.Module):
         self.l_hyd = FocalLoss(weight=weight, gamma=gamma, reduction=reduction)
         
     def forward(self, input, targets):
-        for i in range(len(targets)):
-            targets[i] = torch.where(targets[i] < 0, torch.argmax(input[i], dim=-1), targets[i])
         
         loss_oil = self.l_oil(input[0], targets[0])
         loss_sen = self.l_sen(input[1], targets[1])
