@@ -39,11 +39,11 @@ def set_seed(seed : int) -> None:
     np.random.seed(seed)
     random.seed(seed)
   
-def save_model(model, save_path, epoch_cnt, max_ckpt=None):
+def save_model(model, save_path, epoch_cnt, max_ckpt=None, type="epoch"):
     if max_ckpt is not None:
         check_pth(save_path, max_ckpt)
     os.makedirs(save_path, exist_ok=True)
-    save_name = os.path.join(save_path, 'epoch' + str(epoch_cnt) + '.pth')
+    save_name = os.path.join(save_path, type + str(epoch_cnt) + '.pth')
     torch.save(model.state_dict(), save_name)
     return save_name
 
@@ -201,7 +201,7 @@ def main():
 
             if val_total_acc > best_accuracy:
                 best_accuracy = val_total_acc
-                save_model(model=model, save_path=os.path.join(arg.save_path, "best"), name="best", iter_cnt=best_accuracy, max_ckpt=arg.max_ckpt)
+                save_model(model, os.path.join(arg.save_path, "best"), best_accuracy, arg.max_ckpt, "best")
                 print("*** Save the best model ***\n")
 
 if __name__ == '__main__':
