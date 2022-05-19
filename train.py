@@ -27,6 +27,9 @@ def parse_args():
     parser.add_argument('--load-from', help='the checkpoint file to load weights from')
     parser.add_argument('--no-validate', action='store_false', help='whether not to evaluate the validation set during training')
     parser.add_argument('--seed', type=int, default=2022, help='random Seed setting')
+    
+    args = parser.parse_args()
+    return args
 
 def set_seed(seed : int) -> None:
     torch.manual_seed(seed)
@@ -187,3 +190,6 @@ def main():
             print(f"| Wri Acc {val_wri_acc:.4f} | Wri Loss {val_wri_loss:.4f} |")
             print(f"| Hyd Acc {val_hyd_acc:.4f} | Hyd Loss {val_hyd_loss:.4f} |")
             print("ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ\n")
+
+if __name__ is '__main__':
+    main()
