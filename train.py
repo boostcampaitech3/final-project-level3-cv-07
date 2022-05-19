@@ -16,6 +16,7 @@ from model.metric import ArcMarginProduct
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a Classfier')
     parser.add_argument('--epoch', type=int, default=50, help='training epoch setting')
+    parser.add_argument('--batch-size', type=int, default=8, help='batch size setting')
     parser.add_argument('--val-interval', type=int, default=1, help='validation interval')
     parser.add_argument('--log-interval', type=int, default=50, help='training log interval')
     parser.add_argument('--model-size', type=str, choices=['tiny', 'small', 'base', 'large', 'xlarge'], default='tiny', 
