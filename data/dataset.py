@@ -1,3 +1,4 @@
+from sre_constants import CATEGORY_LINEBREAK
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from albumentations.pytorch import ToTensorV2
@@ -12,12 +13,13 @@ import albumentations as A
 
 
 class Derma_dataset(Dataset):
+
     def __init__(self, data_dir, transform=None) -> None:
         super().__init__()
         
         self.transform = transform
+        self.cat_list = ['oil', 'sensitive', 'pigmentation', 'wrinkle', 'hydration']
         self.data = self.load_json(data_dir)
-        
     
     def load_json(self, path):
         print('load json files from {}'.format(path))
@@ -30,6 +32,11 @@ class Derma_dataset(Dataset):
                 json_data = json.load(f)
             
             file_name = json_data['file_name']
+            
+            for cat in self.cat_list:
+                if json_data[cat] < 0:
+                    json_data[cat] = 5
+                
             del json_data['file_name']
             del json_data['part']
             data.append([path + '/JPEGImages/{}'.format(file_name), json_data])
