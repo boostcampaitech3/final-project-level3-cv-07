@@ -148,7 +148,7 @@ def main():
 
         scheduler.step()
 
-        if arg.save_path is not None & ((epoch + 1) % arg.save_interval == 0):
+        if (arg.save_path is not None) & ((epoch + 1) % arg.save_interval == 0):
             save_model(model, arg.save_path, epoch+1, arg.max_ckpt)
             
         model.eval()
