@@ -3,6 +3,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+import torch.optim as optim
 import random
 from tqdm import tqdm
 import argparse
@@ -108,6 +109,8 @@ def main():
     optimizer = torch.optim.AdamW(model.parameters(),
                                 lr=0.001, weight_decay=0.05)
 
+    scheduler = optim.lr_scheduler.StepLR(optimizer=optimizer, step_size=10, gamma=0.5)
+
     for epoch in range(EPOCH):
         model.train()
         
@@ -142,6 +145,8 @@ def main():
             # train accuracy와 loss에서는 그냥 50iter 마다 그때의 acc, loss 출력
             if ((idx+1) % arg.log_interval) == 0:
                 print(f"  Iter[{idx+1} / {len(train_dataloader)}] | Train_Accuracy: {train_total_acc:.4f} | Train_Loss: {train_total_loss:.4f}")
+
+        scheduler.step()
 
         if arg.save_path is not None & ((epoch + 1) % arg.save_interval == 0):
             save_model(model, arg.save_path, epoch+1, arg.max_ckpt)
