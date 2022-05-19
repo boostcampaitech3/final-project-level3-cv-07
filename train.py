@@ -44,7 +44,7 @@ def save_model(model, save_path, epoch_cnt, max_ckpt=None, type="epoch"):
     if max_ckpt is not None:
         check_pth(save_path, max_ckpt)
     os.makedirs(save_path, exist_ok=True)
-    save_name = os.path.join(save_path, type + str(epoch_cnt) + '.pth')
+    save_name = os.path.join(save_path, type + '_' + str(epoch_cnt) + '.pth')
     torch.save(model.state_dict(), save_name)
     return save_name
 
