@@ -1,4 +1,4 @@
-import os
+import os, glob
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -33,27 +33,35 @@ def set_seed(seed : int) -> None:
     torch.backends.cudnn.benchmark = False
     np.random.seed(seed)
     random.seed(seed)
+  
+def save_model(model, save_path, name, iter_cnt, max_ckpt=None):
+
     
-def save_model(model, save_path, name, iter_cnt):
     save_name = os.path.join(save_path, name + '_' + str(iter_cnt) + '.pth')
     torch.save(model.state_dict(), save_name)
     return save_name
 
+def check_pth(save_path, max_ckpt):
+    pth_list = glob.glob(save_path + '*.pth')
+    
+    if len(pth_list) == max_ckpt:
+         
+
 class AverageMeter(object):
-  def __init__(self):
-      self.reset()
+    def __init__(self):
+        self.reset()
 
-  def reset(self):
-    self.val = 0
-    self.avg = 0
-    self.sum = 0
-    self.count = 0
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
 
-  def update(self, val, n=1):
-    self.val = val
-    self.sum += val * n
-    self.count += n
-    self.avg = self.sum / self.count
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count
 
 def main():
     arg = parse_args()
