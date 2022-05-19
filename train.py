@@ -41,6 +41,7 @@ def set_seed(seed : int) -> None:
 def save_model(model, save_path, epoch_cnt, max_ckpt=None):
     if max_ckpt is not None:
         check_pth(save_path, max_ckpt)
+    os.makedirs(save_path, exist_ok=True)
     save_name = os.path.join(save_path, 'epoch' + str(epoch_cnt) + '.pth')
     torch.save(model.state_dict(), save_name)
     return save_name
@@ -190,6 +191,11 @@ def main():
             print(f"| Wri Acc {val_wri_acc:.4f} | Wri Loss {val_wri_loss:.4f} |")
             print(f"| Hyd Acc {val_hyd_acc:.4f} | Hyd Loss {val_hyd_loss:.4f} |")
             print("ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ\n")
+
+            if val_total_acc > best_accuracy:
+                best_accuracy = val_total_acc
+                save_model(model=model, save_path=os.path.join(arg.save_path, "best"), name="best", iter_cnt=best_accuracy, max_ckpt=3)
+                print("*** Save the best model ***\n")
 
 if __name__ == '__main__':
     main()
