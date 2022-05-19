@@ -1,6 +1,3 @@
-from re import U
-
-from cv2 import CALIB_THIN_PRISM_MODEL
 from data.dataset import Derma_dataset
 from model.model import Convnext_custom
 from model.losses import FocalLoss, Derma_FocalLoss
@@ -39,7 +36,7 @@ def save_model(model, save_path, name, iter_cnt):
     torch.save(model.state_dict(), save_name)
     return save_name
 
-BATCH_SIZE = 8
+BATCH_SIZE = 12
 NUM_CLASSES = 5
 EPOCH = 50
 
@@ -73,8 +70,8 @@ cat_list = ['oil', 'sensitive', 'pigmentation', 'wrinkle', 'hydration']
 for i in range(EPOCH):
     model.train()
     pbar = tqdm(enumerate(train_dataloader), unit='batch')
-    epoch_loss = {cat : 0 for cat in cat_list}
-    epoch_acc = {cat : 0 for cat in cat_list}
+    epoch_loss = {cat : torch.tensor([]) for cat in cat_list}
+    epoch_acc = {cat : torch.tensor([]) for cat in cat_list}
     
     for idx, data in pbar:
         X, Ys = data
@@ -91,8 +88,12 @@ for i in range(EPOCH):
             pred = pred[gt_y != 5]
             gt_y = gt_y[gt_y != 5]
             
-            corr = torch.sum(pred.data == gt_y.data) / pred.shape[0]
-            acc_list.append(corr)
+            if pred.shape[0] > 0:
+                corr = torch.sum(pred.data == gt_y.data) / pred.shape[0]
+                acc_list.append(corr)
+            else:
+                corr = torch.tensor([-1])
+                acc_list.append(corr)
             
         batch_loss, cat_losses = criterion(pred_dict, Ys)
         
@@ -102,7 +103,8 @@ for i in range(EPOCH):
 
         for idx, cat in enumerate(cat_list):
             epoch_loss[cat] += cat_losses[idx].item()
-            epoch_acc[cat] += acc_list[idx].item()
+            if acc_list[idx].item() != -1:
+                epoch_acc[cat] += acc_list[idx].item()
         
         pbar.set_postfix(total_loss=batch_loss.item(), 
                          oil_loss=cat_losses[0].item(), sen_loss=cat_losses[1].item(),
@@ -115,7 +117,7 @@ for i in range(EPOCH):
         epoch_loss['pigmentation'] / len(train_dataloader), epoch_loss['wrinkle'] / len(train_dataloader), epoch_loss['hydration'] / len(train_dataloader)
     ))
     print('Total Acc  : {:0.4f} | Acc_Oil  : {:0.4f} | Acc_Sen  : {:0.4f} | Acc_Pig  : {:0.4f} | Acc_Wri  : {:0.4f} | Acc_Hyd  : {:0.4f}'.format(
-        sum(epoch_acc.values()) / len(train_dataloader), epoch_acc['oil'] / len(train_dataloader), epoch_acc['sensitive'] / len(train_dataloader),
+        sum(epoch_acc.values()) / len(train_dataloader) / 5, epoch_acc['oil'] / len(train_dataloader), epoch_acc['sensitive'] / len(train_dataloader),
         epoch_acc['pigmentation'] / len(train_dataloader), epoch_acc['wrinkle'] / len(train_dataloader), epoch_acc['hydration'] / len(train_dataloader)
     ))
     print('=' * 70)
