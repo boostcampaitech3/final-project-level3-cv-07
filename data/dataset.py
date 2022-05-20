@@ -16,9 +16,8 @@ class Derma_dataset(Dataset):
     
     def __init__(self, data_dir : str, select_idx : int, transform=None) -> None:
         super().__init__()
-        if select_idx is not None:
-            if select_idx < 0 or select_idx > 3:
-                raise ValueError('select part idx are 0 ~ 3, you select {select_idx}')
+        if select_idx is None or select_idx < 0 or select_idx > 3:
+            raise ValueError('select part idx are 0 ~ 3, you select {select_idx}')
 
         
         self.transform = transform

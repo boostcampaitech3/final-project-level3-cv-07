@@ -122,6 +122,15 @@ def main():
         
         train_total_acc = 0
         train_total_loss = 0
+        train_oil_acc, train_sen_acc, train_pig_acc, train_wri_acc, train_hyd_acc = AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter()
+        train_oil_loss, train_sen_loss, train_pig_loss, train_wri_loss, train_hyd_loss = AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter()
+
+        train_acc_list = [train_oil_acc, train_sen_acc, train_pig_acc, train_wri_acc, train_hyd_acc]
+        train_loss_list = [train_oil_loss, train_sen_loss, train_pig_loss, train_wri_loss, train_hyd_loss]
+        
+        train_acc_dict = {cat : acc for cat, acc in zip(['oil', 'sensitive', 'pigmentation', 'wrinkle', 'hydration'], train_acc_list)}
+        train_loss_dict = {cat : l for cat, l in zip(['oil', 'sensitive', 'pigmentation', 'wrinkle', 'hydration'], train_loss_list)}
+        
         for idx, data in tqdm(enumerate(train_dataloader), unit='Iter'):
             X, Ys = data
             X = X.to(device)
@@ -148,19 +157,19 @@ def main():
                 if exept_cnt == BATCH_SIZE:
                     continue
                 acc = (train_pred_list[cat] == label_list[cat]).sum().item() / (BATCH_SIZE - exept_cnt)
-                acc_list.append(acc)
+                train_acc_dict[cat].update(acc, BATCH_SIZE - exept_cnt)
+                train_loss_dict[cat].update(cat_losses[cat], BATCH_SIZE - exept_cnt)
 
-            train_total_acc += np.mean(acc_list)
-            train_total_loss += batch_loss.item()
-
-            # train accuracy와 loss에서는 그냥 50iter 마다 그때의 acc, loss 출력
             if ((idx+1) % arg.log_interval) == 0:
-                print("  Iter[{} / {}] | Train_Accuracy: {:.4f} | Train_Loss: {:.4f}".format(
-                    idx + 1, len(train_dataloader), train_total_acc / arg.log_interval, train_total_loss / arg.log_interval
-                ))
-                train_total_acc = 0
-                train_total_loss = 0
+                train_acc = [train_acc_dict[cat].avg for cat in Ys.keys()]
+                train_loss = [train_loss_dict[cat].avg for cat in Ys.keys()]
+                train_total_acc = sum(train_acc) / len(train_acc)
+                train_total_loss = sum(train_loss)
 
+                print("  Iter[{} / {}] | Train_Accuracy: {:.4f} | Train_Loss: {:.4f}".format(
+                    idx + 1, len(train_dataloader), train_total_acc, train_total_loss
+                ))
+        
         scheduler.step()
 
         if (arg.save_path is not None) & ((epoch + 1) % arg.save_interval == 0):
@@ -203,12 +212,10 @@ def main():
                     val_acc_dict[cat].update(acc, BATCH_SIZE - exept_cnt)
                     val_loss_dict[cat].update(cat_losses[cat], BATCH_SIZE - exept_cnt)
 
-            val_oil_acc, val_sen_acc, val_pig_acc, val_wri_acc, val_hyd_acc = val_oil_acc.avg, val_sen_acc.avg, val_pig_acc.avg, val_wri_acc.avg, val_hyd_acc.avg
-            val_oil_loss, val_sen_loss, val_pig_loss, val_wri_loss, val_hyd_loss = val_oil_loss.avg, val_sen_loss.avg, val_pig_loss.avg, val_wri_loss.avg, val_hyd_loss.avg
-            
             val_acc = [val_acc_dict[cat].avg for cat in Ys.keys()]
+            val_loss = [val_loss_dict[cat].avg for cat in Ys.keys()]
             val_total_acc = sum(val_acc) / len(val_acc)
-            val_total_loss = val_oil_loss + val_sen_loss + val_pig_loss + val_wri_loss + val_hyd_loss
+            val_total_loss = sum(val_loss)
 
             print(f"\nEpoch [{epoch+1}/{EPOCH}]  Val Total Loss {val_total_loss:.4f} | Val Total Acc {val_total_acc:.4f}")
             print("ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ")
