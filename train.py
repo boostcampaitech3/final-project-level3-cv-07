@@ -44,7 +44,7 @@ def save_model(model, save_path, epoch_cnt, max_ckpt=None, type="epoch"):
     if max_ckpt is not None:
         check_pth(save_path, max_ckpt)
     os.makedirs(save_path, exist_ok=True)
-    save_name = os.path.join(save_path, type + str(epoch_cnt) + '.pth')
+    save_name = os.path.join(save_path, type + '_' + str(epoch_cnt) + '.pth')
     torch.save(model.state_dict(), save_name)
     return save_name
 
@@ -52,7 +52,7 @@ def check_pth(save_path, max_ckpt):
     pth_list = glob.glob(save_path + '*.pth')
     
     if len(pth_list) == max_ckpt:
-        pth_list = sorted(pth_list, key=lambda x : int(x.split('.')[0].split('_')[-1]))
+        pth_list = sorted(pth_list, key=lambda x : int(x.split('/')[-1].split('.')[0].split('_')[-1]))
         if os.path.exists(pth_list[0]):
             os.remove(pth_list[0])
 
@@ -202,7 +202,7 @@ def main():
 
             if val_total_acc > best_accuracy:
                 best_accuracy = val_total_acc
-                save_model(model, os.path.join(arg.save_path, "best"), best_accuracy, arg.max_ckpt, "best")
+                save_model(model, os.path.join(arg.save_path, "best"), epoch+1, 1, "best")
                 print("*** Save the best model ***\n")
 
 if __name__ == '__main__':
