@@ -14,6 +14,8 @@ from model.model import Convnext_custom
 from model.losses import FocalLoss, Derma_FocalLoss, Derma_CELoss
 from model.metric import ArcMarginProduct
 
+import wandb
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a Classfier')
@@ -57,6 +59,14 @@ def check_pth(save_path, max_ckpt):
         if os.path.exists(pth_list[0]):
             os.remove(pth_list.pop(0))
 
+def wandb_vz_img(img_tensor, label_list, pred_list, table, part):
+    caption = 'GT->PRED\n'
+    for cap in table[part]:
+        caption += '{}:{}->{}\t'.format(cap,label_list[cap][0], pred_list[cap][0])
+
+    img =wandb.Image(img_tensor[0], caption=caption)
+            
+    return img
 
 class AverageMeter(object):
     def __init__(self):
@@ -109,7 +119,7 @@ def main():
 
     # metric_fc = ArcMarginProduct(model.get_last_dim(), NUM_CLASSES)
     model.to(device)
-
+    
     optimizer = torch.optim.AdamW(model.parameters(),
                                 lr=0.0001, weight_decay=0.05)
 
@@ -117,18 +127,31 @@ def main():
 
     best_accuracy = 0
 
+    wandb.init(project="test-project", entity="final-project", name = 'test')
+    wandb.config.update(arg)
+    wandb.watch(model)
+
     for epoch in range(EPOCH):
         model.train()
         
         train_total_acc = 0
         train_total_loss = 0
+        train_oil_acc, train_sen_acc, train_pig_acc, train_wri_acc, train_hyd_acc = AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter()
+        train_oil_loss, train_sen_loss, train_pig_loss, train_wri_loss, train_hyd_loss = AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter()
+
+        train_acc_list = [train_oil_acc, train_sen_acc, train_pig_acc, train_wri_acc, train_hyd_acc]
+        train_loss_list = [train_oil_loss, train_sen_loss, train_pig_loss, train_wri_loss, train_hyd_loss]
+        
+        train_acc_dict = {cat : acc for cat, acc in zip(['oil', 'sensitive', 'pigmentation', 'wrinkle', 'hydration'], train_acc_list)}
+        train_loss_dict = {cat : l for cat, l in zip(['oil', 'sensitive', 'pigmentation', 'wrinkle', 'hydration'], train_loss_list)}
+        
         for idx, data in tqdm(enumerate(train_dataloader), unit='Iter'):
             X, Ys = data
             X = X.to(device)
             
             label_list = {cat: Ys[cat].to(device) for cat in Ys.keys()}
             pred_list = model(X)
-            
+
             batch_loss = 0
 
             batch_loss, cat_losses = criterion(pred_list, label_list)
@@ -142,25 +165,24 @@ def main():
             # print("\n",train_pred_list)
             # print(label_list)
             
-            acc_list = []
             for cat in Ys.keys():
                 exept_cnt = (label_list[cat]==5).sum().item()
                 if exept_cnt == BATCH_SIZE:
                     continue
                 acc = (train_pred_list[cat] == label_list[cat]).sum().item() / (BATCH_SIZE - exept_cnt)
-                acc_list.append(acc)
+                train_acc_dict[cat].update(acc, BATCH_SIZE - exept_cnt)
+                train_loss_dict[cat].update(cat_losses[cat], BATCH_SIZE - exept_cnt)
 
-            train_total_acc += np.mean(acc_list)
-            train_total_loss += batch_loss.item()
-
-            # train accuracy와 loss에서는 그냥 50iter 마다 그때의 acc, loss 출력
             if ((idx+1) % arg.log_interval) == 0:
-                print("  Iter[{} / {}] | Train_Accuracy: {:.4f} | Train_Loss: {:.4f}".format(
-                    idx + 1, len(train_dataloader), train_total_acc / arg.log_interval, train_total_loss / arg.log_interval
-                ))
-                train_total_acc = 0
-                train_total_loss = 0
+                train_acc = [train_acc_dict[cat].avg for cat in Ys.keys()]
+                train_loss = [train_loss_dict[cat].avg for cat in Ys.keys()]
+                train_total_acc = sum(train_acc) / len(train_acc)
+                train_total_loss = sum(train_loss)
 
+                print("  Iter[{} / {}] | Train_Accuracy: {:.4f} | Train_Loss: {:.4f}".format(
+                    idx + 1, len(train_dataloader), train_total_acc, train_total_loss
+                ))
+        
         scheduler.step()
 
         if (arg.save_path is not None) & ((epoch + 1) % arg.save_interval == 0):
@@ -179,7 +201,7 @@ def main():
         val_acc_dict = {cat : acc for cat, acc in zip(['oil', 'sensitive', 'pigmentation', 'wrinkle', 'hydration'], val_acc_list)}
         val_loss_dict = {cat : l for cat, l in zip(['oil', 'sensitive', 'pigmentation', 'wrinkle', 'hydration'], val_loss_list)}
         
-        
+        vz_img = []
         if arg.no_validate & ((epoch + 1) % arg.val_interval == 0):
             for (x, Ys) in val_dataloader:
                 x = x.to(device)
@@ -191,11 +213,11 @@ def main():
                 batch_loss, cat_losses = criterion(pred_list, label_list)
                 
                 pred_list = {cat: torch.argmax(pred_list[cat], dim=-1) for cat in Ys.keys()}
+
+                if len(vz_img) <= 106 or vz_img:
+                    vz_img.append( wandb_vz_img(x,label_list, pred_list,train_dataset.part_table,PART))
                 
-
-
-                acc_list = []
-                for i, cat in enumerate(Ys.keys()):
+                for cat in Ys.keys():
                     exept_cnt = (label_list[cat]==5).sum().item()
                     if exept_cnt == BATCH_SIZE:
                         continue
@@ -203,12 +225,10 @@ def main():
                     val_acc_dict[cat].update(acc, BATCH_SIZE - exept_cnt)
                     val_loss_dict[cat].update(cat_losses[cat], BATCH_SIZE - exept_cnt)
 
-            val_oil_acc, val_sen_acc, val_pig_acc, val_wri_acc, val_hyd_acc = val_oil_acc.avg, val_sen_acc.avg, val_pig_acc.avg, val_wri_acc.avg, val_hyd_acc.avg
-            val_oil_loss, val_sen_loss, val_pig_loss, val_wri_loss, val_hyd_loss = val_oil_loss.avg, val_sen_loss.avg, val_pig_loss.avg, val_wri_loss.avg, val_hyd_loss.avg
-            
             val_acc = [val_acc_dict[cat].avg for cat in Ys.keys()]
+            val_loss = [val_loss_dict[cat].avg for cat in Ys.keys()]
             val_total_acc = sum(val_acc) / len(val_acc)
-            val_total_loss = val_oil_loss + val_sen_loss + val_pig_loss + val_wri_loss + val_hyd_loss
+            val_total_loss = sum(val_loss)
 
             print(f"\nEpoch [{epoch+1}/{EPOCH}]  Val Total Loss {val_total_loss:.4f} | Val Total Acc {val_total_acc:.4f}")
             print("ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ")
@@ -223,6 +243,23 @@ def main():
                 best_accuracy = val_total_acc
                 save_model(model, os.path.join(arg.save_path, "best"), epoch+1, 1, "best")
                 print("*** Save the best model ***\n")
+            
+            wandb.log({
+                'train_total_acc' : train_total_acc,
+                'train_total_loss' : train_total_loss,
+                'val_Oil_acc' : val_oil_acc,
+                'val_Sen_acc' : val_sen_acc,
+                'val_Pig_acc' : val_pig_acc,
+                'val_Wri_acc' : val_wri_acc,
+                'val_Hyd_acc' : val_hyd_acc,
+                'val_Oil_loss' : val_oil_loss,
+                'val_Sen_loss' : val_sen_loss,
+                'val_Pig_loss' : val_pig_loss,
+                'val_Wri_loss' : val_wri_loss,
+                'val_Hyd_loss' : val_hyd_loss,
+                'batch[0],{}'.format(PART) : vz_img
+            })
+
 
 if __name__ == '__main__':
     main()
