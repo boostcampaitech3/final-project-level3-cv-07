@@ -13,14 +13,23 @@ import albumentations as A
 
 
 class Derma_dataset(Dataset):
-
-    def __init__(self, data_dir, transform=None) -> None:
+    
+    def __init__(self, data_dir : str, select_idx : int, transform=None) -> None:
         super().__init__()
+        if select_idx is not None:
+            if select_idx < 0 or select_idx > 3:
+                raise ValueError('select part idx are 0 ~ 3, you select {select_idx}')
+
         
         self.transform = transform
-        self.cat_list = ['oil', 'sensitive', 'pigmentation', 'wrinkle', 'hydration']
+        self.part_table = [['oil', 'sensitive', 'pigmentation'],
+                           ['oil', 'sensitive', 'wrinkle'],
+                           ['oil', 'sensitive', 'pigmentation', 'wrinkle'],
+                           ['sensitive', 'wrinkle', 'hydration']]
+        self.select_idx = select_idx
+        
         self.data = self.load_json(data_dir)
-    
+        
     def load_json(self, path):
         print('load json files from {}'.format(path))
         json_list = glob.glob(path + '/JPEGImages/*.json')
@@ -31,15 +40,20 @@ class Derma_dataset(Dataset):
             with open(json_file, 'r') as f:
                 json_data = json.load(f)
             
+            label_data = {}
+            if json_data['part'] != self.select_idx:
+                continue
+
             file_name = json_data['file_name']
             
-            for cat in self.cat_list:
+            for cat in self.part_table[self.select_idx]:
                 if json_data[cat] < 0:
                     json_data[cat] = 5
+                label_data[cat] = json_data[cat]
+            
+            data.append([path + '/JPEGImages/{}'.format(file_name), label_data, json_data['part']])
+
                 
-            del json_data['file_name']
-            del json_data['part']
-            data.append([path + '/JPEGImages/{}'.format(file_name), json_data])
         
         print('Data Load Success, Total Data length : {}'.format(len(data)))
         return data
@@ -57,18 +71,18 @@ class Derma_dataset(Dataset):
         if self.transform is not None:
             x = self.transform(image=x)["image"]
         else:
-            default_transform = A.Compose([
-                A.PadIfNeeded(
-                    border_mode= cv2.BORDER_CONSTANT,
-                    value=0),
-                A.HorizontalFlip(),
-                A.Normalize(
-                    mean=(0.65490196, 0.53333333,0.45882353),
-                    std=(0.18431373, 0.16078431, 0.14901961)),
-                ToTensorV2()
-            ])
-            if x.shape[0] > 1024:
-                x = A.Crop()(image=x)['image']
-            x = default_transform(image=x)['image']
-            x = x.float()
+            if self.data[index][2] == 0:
+                resize = A.Resize(960, 1024)
+                x = resize(image=x)['image']
+            elif self.data[index][2] == 1:
+                resize = A.Resize(768, 1024)
+                x = resize(image=x)['image']
+            elif self.data[index][2] == 2:
+                resize = A.Resize(512, 1024)
+                x = resize(image=x)['image']
+            else:
+                resize = A.Resize(512, 1024)
+                x = resize(image=x)['image']
+            totensor = ToTensorV2()
+            x = totensor(image=x)['image'].float()
         return x, y
