@@ -151,7 +151,6 @@ def main():
             # print("\n",train_pred_list)
             # print(label_list)
             
-            acc_list = []
             for cat in Ys.keys():
                 exept_cnt = (label_list[cat]==5).sum().item()
                 if exept_cnt == BATCH_SIZE:
@@ -201,10 +200,7 @@ def main():
                 
                 pred_list = {cat: torch.argmax(pred_list[cat], dim=-1) for cat in Ys.keys()}
                 
-
-
-                acc_list = []
-                for i, cat in enumerate(Ys.keys()):
+                for cat in Ys.keys():
                     exept_cnt = (label_list[cat]==5).sum().item()
                     if exept_cnt == BATCH_SIZE:
                         continue
