@@ -123,7 +123,7 @@ def main():
             
             label_list = {cat: Ys[cat].to(device) for cat in Ys.keys()}
             pred_list = model(X)
-            
+
             batch_loss = 0
 
             batch_loss, cat_losses = criterion(pred_list, label_list)
