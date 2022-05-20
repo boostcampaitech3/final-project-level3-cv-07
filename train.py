@@ -226,9 +226,11 @@ def main():
                     val_loss_dict[cat].update(cat_losses[cat], BATCH_SIZE - exept_cnt)
 
             val_acc = [val_acc_dict[cat].avg for cat in Ys.keys()]
-            val_loss = [val_loss_dict[cat].avg for cat in Ys.keys()]
+            val_oil_acc, val_sen_acc, val_pig_acc, val_wri_acc, val_hyd_acc = val_oil_acc.avg, val_sen_acc.avg, val_pig_acc.avg, val_wri_acc.avg, val_hyd_acc.avg
+            val_oil_loss, val_sen_loss, val_pig_loss, val_wri_loss, val_hyd_loss = val_oil_loss.avg, val_sen_loss.avg, val_pig_loss.avg, val_wri_loss.avg, val_hyd_loss.avg
+
             val_total_acc = sum(val_acc) / len(val_acc)
-            val_total_loss = sum(val_loss)
+            val_total_loss = val_oil_loss + val_sen_loss + val_pig_loss + val_wri_loss + val_hyd_loss
 
             print(f"\nEpoch [{epoch+1}/{EPOCH}]  Val Total Loss {val_total_loss:.4f} | Val Total Acc {val_total_acc:.4f}")
             print("ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ")
