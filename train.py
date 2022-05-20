@@ -14,6 +14,8 @@ from model.model import Convnext_custom
 from model.losses import FocalLoss, Derma_FocalLoss, Derma_CELoss
 from model.metric import ArcMarginProduct
 
+import wandb
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a Classfier')
@@ -57,6 +59,14 @@ def check_pth(save_path, max_ckpt):
         if os.path.exists(pth_list[0]):
             os.remove(pth_list.pop(0))
 
+def wandb_vz_img(img_tensor, label_list, pred_list, table, part):
+    caption = 'GT->PRED\n'
+    for cap in table[part]:
+        caption += '{}:{}->{}\t'.format(cap,label_list[cap][0], pred_list[cap][0])
+
+    img =wandb.Image(img_tensor[0], caption=caption)
+            
+    return img
 
 class AverageMeter(object):
     def __init__(self):
@@ -109,13 +119,17 @@ def main():
 
     # metric_fc = ArcMarginProduct(model.get_last_dim(), NUM_CLASSES)
     model.to(device)
-
+    
     optimizer = torch.optim.AdamW(model.parameters(),
                                 lr=0.0001, weight_decay=0.05)
 
     scheduler = optim.lr_scheduler.StepLR(optimizer=optimizer, step_size=10, gamma=0.5)
 
     best_accuracy = 0
+
+    wandb.init(project="test-project", entity="final-project", name = 'test')
+    wandb.config.update(arg)
+    wandb.watch(model)
 
     for epoch in range(EPOCH):
         model.train()
@@ -187,7 +201,7 @@ def main():
         val_acc_dict = {cat : acc for cat, acc in zip(['oil', 'sensitive', 'pigmentation', 'wrinkle', 'hydration'], val_acc_list)}
         val_loss_dict = {cat : l for cat, l in zip(['oil', 'sensitive', 'pigmentation', 'wrinkle', 'hydration'], val_loss_list)}
         
-        
+        vz_img = []
         if arg.no_validate & ((epoch + 1) % arg.val_interval == 0):
             for (x, Ys) in val_dataloader:
                 x = x.to(device)
@@ -199,6 +213,9 @@ def main():
                 batch_loss, cat_losses = criterion(pred_list, label_list)
                 
                 pred_list = {cat: torch.argmax(pred_list[cat], dim=-1) for cat in Ys.keys()}
+
+                if len(vz_img) <= 106 or vz_img:
+                    vz_img.append( wandb_vz_img(x,label_list, pred_list,train_dataset.part_table,PART))
                 
                 for cat in Ys.keys():
                     exept_cnt = (label_list[cat]==5).sum().item()
@@ -226,6 +243,23 @@ def main():
                 best_accuracy = val_total_acc
                 save_model(model, os.path.join(arg.save_path, "best"), epoch+1, 1, "best")
                 print("*** Save the best model ***\n")
+            
+            wandb.log({
+                'train_total_acc' : train_total_acc,
+                'train_total_loss' : train_total_loss,
+                'val_Oil_acc' : val_oil_acc,
+                'val_Sen_acc' : val_sen_acc,
+                'val_Pig_acc' : val_pig_acc,
+                'val_Wri_acc' : val_wri_acc,
+                'val_Hyd_acc' : val_hyd_acc,
+                'val_Oil_loss' : val_oil_loss,
+                'val_Sen_loss' : val_sen_loss,
+                'val_Pig_loss' : val_pig_loss,
+                'val_Wri_loss' : val_wri_loss,
+                'val_Hyd_loss' : val_hyd_loss,
+                'batch[0],{}'.format(PART) : vz_img
+            })
+
 
 if __name__ == '__main__':
     main()
