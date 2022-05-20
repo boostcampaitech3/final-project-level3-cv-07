@@ -74,15 +74,19 @@ class Derma_dataset(Dataset):
             if self.data[index][2] == 0:
                 resize = A.Resize(960, 1024)
                 x = resize(image=x)['image']
+                x = A.normalize(img=x, mean=[0.697, 0.560, 0.482], std=[0.717, 0.582, 0.505])
             elif self.data[index][2] == 1:
                 resize = A.Resize(768, 1024)
                 x = resize(image=x)['image']
+                x = A.normalize(img=x, mean=[0.567, 0.480, 0.420], std=[0.633, 0.537, 0.474])
             elif self.data[index][2] == 2:
                 resize = A.Resize(512, 1024)
                 x = resize(image=x)['image']
+                x = A.normalize(img=x, mean=[0.739, 0.595, 0.516], std=[0.756, 0.612, 0.535])
             else:
                 resize = A.Resize(512, 1024)
                 x = resize(image=x)['image']
+                x = A.normalize(img=x, mean=[0.590, 0.477, 0.413], std=[0.628, 0.512, 0.448])
             totensor = ToTensorV2()
             x = totensor(image=x)['image'].float()
         return x, y

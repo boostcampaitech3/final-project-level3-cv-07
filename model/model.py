@@ -12,8 +12,68 @@ from numpy import c_
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torchvision.models import resnet50
 from timm.models.layers import trunc_normal_, DropPath
 from timm.models.registry import register_model
+
+class Resnet50(nn.Module):
+    def __init__(self, part):
+        super().__init__()
+        
+        self.model = resnet50()
+        self.last_dim = self.model.fc.in_features
+        self.model.fc = Cfc_Head(self.last_dim, part)
+        
+    def forward(self, x):
+        x = self.model(x)
+        return x
+
+class Cfc_Head(nn.Module):
+    def __init__(self, last_dim, part):
+        super().__init__()
+        self.last_dim = last_dim
+        self.head_dict = self.build_head(part)
+    def build_head(self, part):
+        if part is None and type(part) != int:
+            raise ValueError('Please select face part number.')
+        elif part == 0:
+            print('building cheeck classification head...')
+            part_cat = ['oil', 'sensitive', 'pigmentation']
+            head_dict = nn.ModuleDict()
+            for cat in part_cat:
+                head = nn.Linear(self.last_dim, 5)
+                head_dict[cat] = head
+        elif part == 1:
+            print('building upper_face classification head...')
+            part_cat = ['oil', 'sensitive', 'wrinkle']
+            head_dict = nn.ModuleDict()
+            for cat in part_cat:
+                head = nn.Linear(self.last_dim, 5)
+                head_dict[cat] = head
+        elif part == 2:
+            print('building mid_face classification head...')
+            part_cat = ['oil', 'sensitive', 'pigmentation', 'wrinkle']
+            head_dict = nn.ModuleDict()
+            for cat in part_cat:
+                head = nn.Linear(self.last_dim, 5)
+                head_dict[cat] = head
+        else:
+            print('building lower_face classification head...')
+            part_cat = ['sensitive', 'wrinkle', 'hydration']
+            head_dict = nn.ModuleDict()
+            for _ in part_cat:
+                head = nn.Linear(self.last_dim, 5)
+                head_dict[cat] = head
+        
+        return head_dict
+    
+    def forward(self, x):
+        pred_dict = {}
+        for cat in self.head_dict.keys():
+            pred = self.head_dict[cat](x)
+            pred_dict[cat] = pred
+        
+        return pred_dict
 
 class Block(nn.Module):
     r""" ConvNeXt Block. There are two equivalent implementations:
@@ -118,6 +178,7 @@ class ConvNeXt(nn.Module):
 
     def forward(self, x):
         x = self.forward_features(x)
+        x = self.head(x)
         return x
 
 class LayerNorm(nn.Module):
