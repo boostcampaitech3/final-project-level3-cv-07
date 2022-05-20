@@ -52,7 +52,7 @@ def check_pth(save_path, max_ckpt):
     pth_list = glob.glob(save_path + '*.pth')
     
     if len(pth_list) == max_ckpt:
-        pth_list = sorted(pth_list, key=lambda x : int(x.split('.')[0].split('_')[-1]))
+        pth_list = sorted(pth_list, key=lambda x : int(x.split('/')[-1].split('.')[0].split('_')[-1]))
         if os.path.exists(pth_list[0]):
             os.remove(pth_list[0])
 
