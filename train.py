@@ -1,3 +1,4 @@
+from codecs import ignore_errors
 import os, glob
 import numpy as np
 import torch
@@ -10,7 +11,7 @@ import argparse
 
 from data.dataset import Derma_dataset
 from model.model import Convnext_custom
-from model.losses import FocalLoss, Derma_FocalLoss
+from model.losses import FocalLoss, Derma_FocalLoss, Derma_CELoss
 from model.metric import ArcMarginProduct
 
 
@@ -50,11 +51,11 @@ def save_model(model, save_path, epoch_cnt, max_ckpt=None, type="epoch"):
 
 def check_pth(save_path, max_ckpt):
     pth_list = glob.glob(save_path + '*.pth')
+    pth_list = sorted(pth_list, key=lambda x : int(x.split('/')[-1].split('.')[0].split('_')[-1]))
     
-    if len(pth_list) == max_ckpt:
-        pth_list = sorted(pth_list, key=lambda x : int(x.split('/')[-1].split('.')[0].split('_')[-1]))
+    while len(pth_list) >= max_ckpt:
         if os.path.exists(pth_list[0]):
-            os.remove(pth_list[0])
+            os.remove(pth_list.pop(0))
 
 
 class AverageMeter(object):
@@ -72,6 +73,7 @@ class AverageMeter(object):
         self.sum += val * n
         self.count += n
         self.avg = self.sum / self.count
+        
 
 def main():
     arg = parse_args()
@@ -79,11 +81,12 @@ def main():
     BATCH_SIZE = arg.batch_size
     NUM_CLASSES = 5
     EPOCH = arg.epoch
+    PART = 0
 
     device = torch.device('cuda')
 
-    train_dataset = Derma_dataset('/opt/ml/input/data/train', transform=None)
-    val_dataset = Derma_dataset('/opt/ml/input/data/val', transform=None)
+    train_dataset = Derma_dataset('/opt/ml/input/data/train', select_idx=PART, transform=None)
+    val_dataset = Derma_dataset('/opt/ml/input/data/val', select_idx=PART, transform=None)
 
     train_dataloader = DataLoader(train_dataset, 
                                 batch_size = BATCH_SIZE, 
@@ -97,18 +100,18 @@ def main():
                                 drop_last=True)
 
 
-    model = Convnext_custom(arg.model_size)
+    model = Convnext_custom(arg.model_size, part=PART)
     
     if arg.load_from is not None:
         model.load_state_dict(torch.load(arg.load_from))
 
-    criterion = Derma_FocalLoss(gamma=2).to(device)
+    criterion = Derma_FocalLoss(ignore_index=5, part=PART)
 
     # metric_fc = ArcMarginProduct(model.get_last_dim(), NUM_CLASSES)
     model.to(device)
 
     optimizer = torch.optim.AdamW(model.parameters(),
-                                lr=0.001, weight_decay=0.05)
+                                lr=0.0001, weight_decay=0.05)
 
     scheduler = optim.lr_scheduler.StepLR(optimizer=optimizer, step_size=10, gamma=0.5)
 
@@ -117,6 +120,8 @@ def main():
     for epoch in range(EPOCH):
         model.train()
         
+        train_total_acc = 0
+        train_total_loss = 0
         for idx, data in tqdm(enumerate(train_dataloader), unit='Iter'):
             X, Ys = data
             X = X.to(device)
@@ -134,6 +139,9 @@ def main():
 
             train_pred_list = {cat: torch.argmax(pred_list[cat], dim=-1) for cat in Ys.keys()}
 
+            # print("\n",train_pred_list)
+            # print(label_list)
+            
             acc_list = []
             for cat in Ys.keys():
                 exept_cnt = (label_list[cat]==5).sum().item()
@@ -142,12 +150,16 @@ def main():
                 acc = (train_pred_list[cat] == label_list[cat]).sum().item() / (BATCH_SIZE - exept_cnt)
                 acc_list.append(acc)
 
-            train_total_acc = np.mean(acc_list)
-            train_total_loss = batch_loss
+            train_total_acc += np.mean(acc_list)
+            train_total_loss += batch_loss.item()
 
             # train accuracy와 loss에서는 그냥 50iter 마다 그때의 acc, loss 출력
             if ((idx+1) % arg.log_interval) == 0:
-                print(f"  Iter[{idx+1} / {len(train_dataloader)}] | Train_Accuracy: {train_total_acc:.4f} | Train_Loss: {train_total_loss:.4f}")
+                print("  Iter[{} / {}] | Train_Accuracy: {:.4f} | Train_Loss: {:.4f}".format(
+                    idx + 1, len(train_dataloader), train_total_acc / arg.log_interval, train_total_loss / arg.log_interval
+                ))
+                train_total_acc = 0
+                train_total_loss = 0
 
         scheduler.step()
 
@@ -161,6 +173,13 @@ def main():
         val_oil_acc, val_sen_acc, val_pig_acc, val_wri_acc, val_hyd_acc = AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter()
         val_oil_loss, val_sen_loss, val_pig_loss, val_wri_loss, val_hyd_loss = AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter()
 
+        val_acc_list = [val_oil_acc, val_sen_acc, val_pig_acc, val_wri_acc, val_hyd_acc]
+        val_loss_list = [val_oil_loss, val_sen_loss, val_pig_loss, val_wri_loss, val_hyd_loss]
+        
+        val_acc_dict = {cat : acc for cat, acc in zip(['oil', 'sensitive', 'pigmentation', 'wrinkle', 'hydration'], val_acc_list)}
+        val_loss_dict = {cat : l for cat, l in zip(['oil', 'sensitive', 'pigmentation', 'wrinkle', 'hydration'], val_loss_list)}
+        
+        
         if arg.no_validate & ((epoch + 1) % arg.val_interval == 0):
             for (x, Ys) in val_dataloader:
                 x = x.to(device)
@@ -173,8 +192,7 @@ def main():
                 
                 pred_list = {cat: torch.argmax(pred_list[cat], dim=-1) for cat in Ys.keys()}
                 
-                val_acc_list = [val_oil_acc, val_sen_acc, val_pig_acc, val_wri_acc, val_hyd_acc]
-                val_loss_list = [val_oil_loss, val_sen_loss, val_pig_loss, val_wri_loss, val_hyd_loss]
+
 
                 acc_list = []
                 for i, cat in enumerate(Ys.keys()):
@@ -182,14 +200,15 @@ def main():
                     if exept_cnt == BATCH_SIZE:
                         continue
                     acc = (pred_list[cat] == label_list[cat]).sum().item() / (BATCH_SIZE - exept_cnt)
-                    val_acc_list[i].update(acc, BATCH_SIZE - exept_cnt)
-                    val_loss_list[i].update(cat_losses[i], BATCH_SIZE - exept_cnt)
+                    val_acc_dict[cat].update(acc, BATCH_SIZE - exept_cnt)
+                    val_loss_dict[cat].update(cat_losses[cat], BATCH_SIZE - exept_cnt)
 
             val_oil_acc, val_sen_acc, val_pig_acc, val_wri_acc, val_hyd_acc = val_oil_acc.avg, val_sen_acc.avg, val_pig_acc.avg, val_wri_acc.avg, val_hyd_acc.avg
             val_oil_loss, val_sen_loss, val_pig_loss, val_wri_loss, val_hyd_loss = val_oil_loss.avg, val_sen_loss.avg, val_pig_loss.avg, val_wri_loss.avg, val_hyd_loss.avg
-
-            val_total_acc = (val_oil_acc + val_sen_acc + val_pig_acc + val_wri_acc + val_hyd_acc) / 5
-            val_total_loss = (val_oil_loss + val_sen_loss + val_pig_loss + val_wri_loss + val_hyd_loss) / 5
+            
+            val_acc = [acc[cat].avg for cat in Ys.keys()]
+            val_total_acc = sum(val_acc) / len(val_acc)
+            val_total_loss = val_oil_loss + val_sen_loss + val_pig_loss + val_wri_loss + val_hyd_loss
 
             print(f"\nEpoch [{epoch+1}/{EPOCH}]  Val Total Loss {val_total_loss:.4f} | Val Total Acc {val_total_acc:.4f}")
             print("ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ")

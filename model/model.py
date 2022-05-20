@@ -8,6 +8,7 @@
 
 from distutils.command.build import build
 from operator import mod
+from numpy import c_
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -117,7 +118,6 @@ class ConvNeXt(nn.Module):
 
     def forward(self, x):
         x = self.forward_features(x)
-        x = self.head(x)
         return x
 
 class LayerNorm(nn.Module):
@@ -206,23 +206,12 @@ def convnext_xlarge(pretrained=False, in_22k=False, **kwargs):
     return model
 
 class Convnext_custom(nn.Module):
-    def __init__(self, model_type):
+    def __init__(self, model_type, part=None):
         super().__init__()
         
         self.model = self.build_model(model_type)
         self.last_dim = self.model.get_last_dim()
-        self.head_list = nn.ModuleList()
-        self.head_o = nn.Linear(self.model.get_last_dim(), 5)
-        self.head_s = nn.Linear(self.model.get_last_dim(), 5)
-        self.head_p = nn.Linear(self.model.get_last_dim(), 5)
-        self.head_w = nn.Linear(self.model.get_last_dim(), 5)
-        self.head_h = nn.Linear(self.model.get_last_dim(), 5)
-        
-        self.head_list.append(self.head_o)
-        self.head_list.append(self.head_s)
-        self.head_list.append(self.head_p)
-        self.head_list.append(self.head_w)
-        self.head_list.append(self.head_h)
+        self.head_dict = self.build_head(part)
 
     def build_model(self, m_type) -> ConvNeXt:
         if m_type == 'tiny':
@@ -240,14 +229,49 @@ class Convnext_custom(nn.Module):
         else:
             model = convnext_xlarge()
             return model
+    
+    def build_head(self, part):
+        if part is None and type(part) != int:
+            raise ValueError('Please select face part number.')
+        elif part == 0:
+            print('building cheeck classification head...')
+            part_cat = ['oil', 'sensitive', 'pigmentation']
+            head_dict = nn.ModuleDict()
+            for cat in part_cat:
+                head = nn.Linear(self.last_dim, 5)
+                head_dict[cat] = head
+        elif part == 1:
+            print('building upper_face classification head...')
+            part_cat = ['oil', 'sensitive', 'wrinkle']
+            head_dict = nn.ModuleDict()
+            for cat in part_cat:
+                head = nn.Linear(self.last_dim, 5)
+                head_dict[cat] = head
+        elif part == 2:
+            print('building mid_face classification head...')
+            part_cat = ['oil', 'sensitive', 'pigmentation', 'wrinkle']
+            head_dict = nn.ModuleDict()
+            for cat in part_cat:
+                head = nn.Linear(self.last_dim, 5)
+                head_dict[cat] = head
+        else:
+            print('building lower_face classification head...')
+            part_cat = ['sensitive', 'wrinkle', 'hydration']
+            head_dict = nn.ModuleDict()
+            for _ in part_cat:
+                head = nn.Linear(self.last_dim, 5)
+                head_dict[cat] = head
         
+        return head_dict
+                
     def forward(self, x):
-        feat = self.model.forward_features(x)
+        feat = self.model(x)
         
         pred_dict = {}
-        for head, cat in zip(self.head_list, ['oil', 'sensitive', 'pigmentation', 'wrinkle', 'hydration']):
-            pred = head(feat)
+        for cat in self.head_dict.keys():
+            pred = self.head_dict[cat](feat)
             pred_dict[cat] = pred
         
         return pred_dict
+    
     
