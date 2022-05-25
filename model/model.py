@@ -326,7 +326,7 @@ class Convnext_custom(nn.Module):
         return head_dict
                 
     def forward(self, x):
-        feat = self.model(x)
+        feat = self.model.forward_features(x)
         
         pred_dict = {}
         for cat in self.head_dict.keys():
@@ -334,5 +334,3 @@ class Convnext_custom(nn.Module):
             pred_dict[cat] = pred
         
         return pred_dict
-    
-    
