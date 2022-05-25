@@ -1,4 +1,4 @@
-from numbers import Rational
+
 from typing import Optional, Sequence
 
 import torch
@@ -145,3 +145,66 @@ class FocalLoss(nn.Module):
             reduction=self.reduction,
             ignore_index=self.ignore_index
         )
+        
+class QuadraticKappaLoss(nn.Module):
+    """
+    Implements the Quadratic Weighted Kappa Loss Function.
+    
+    This loss was introduced in the
+    "Weighted kappa loss function for multi-class classification
+    of ordinal data in deep learning"
+    
+    weighted kappa is widely used in ordinal classification problems.
+    
+    The loss value lies in $ [-\infty, \log 2] $, where $ \log 2 $
+    means the random prediction.
+    
+    and This implements is based on tfa.losses.WeightedKappaLoss
+    """
+    def __init__(self, 
+                 num_classes : int,
+                 weightage: Optional[str] = "quadratic",
+                 name: Optional[str] = "cohen_kappa_loss",
+                 epsilon: Optional[int] = 1e-6,
+                 reduction: str = None
+                 ):
+        super().__init__()
+        
+        self.weightage = weightage
+        self.num_classes = num_classes
+        self.epsilon = epsilon
+        
+        label_vec = torch.arange(num_classes, dtype=torch.float64)
+        self.row_label_vec = torch.reshape(label_vec, (1, num_classes)).to(torch.float64)
+        self.col_label_vec = torch.reshape(label_vec, (num_classes, 1)).to(torch.float64)
+        
+        row_mat = self.row_label_vec.repeat((num_classes, 1))
+        col_mat = self.col_label_vec.repeat((1, num_classes))
+        
+        if weightage == 'linear':
+            self.weight_mat = torch.abs(col_mat - row_mat)
+        else:
+            self.weight_mat = (col_mat - row_mat) ** 2
+    
+    def forward(self, input, target):
+        batch_size = input.size()[0]
+        target : torch.Tensor = F.one_hot(target, num_classes=self.num_classes).to(torch.float64)
+        cat_labels = torch.matmul(target, self.col_label_vec)
+        cat_label_mat = cat_labels.repeat((1, self.num_classes))
+        row_label_mat = self.row_label_vec.repeat((batch_size, 1))
+        
+        if self.weightage == 'linear':
+            weight = torch.abs(cat_label_mat - row_label_mat)
+        else:
+            weight = (cat_label_mat - row_label_mat) ** 2
+            
+        numerator = torch.sum(weight * input)
+        label_dist = torch.sum(target, 0, keepdim=True, dtype=torch.float64)
+        pred_dist = torch.sum(input, dim=0, keepdim=True, dtype=torch.float64)
+        w_pred_dist = torch.matmul(self.weight_mat, pred_dist.permute(1, 0))
+        denominator = torch.sum(torch.matmul(label_dist, w_pred_dist), dtype=torch.float64)
+        denominator /= batch_size
+        
+        loss = numerator / denominator
+        loss = torch.where(torch.isnan(loss), 0.0, loss)
+        return torch.log(loss + self.epsilon)
