@@ -1,4 +1,5 @@
 
+from sklearn.random_projection import johnson_lindenstrauss_min_dim
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from albumentations.pytorch import ToTensorV2
@@ -14,19 +15,24 @@ import albumentations as A
 
 class Derma_dataset(Dataset):
     
-    def __init__(self, data_dir : str, part = None, cat = None, transform=None) -> None:
+    def __init__(self, data_dir :  str or list, part = None, cat = None, transform=None) -> None:
         super().__init__()
         
         self.transform = transform
-        self.part_table = [['oil', 'sensitive', 'pigmentation'],
+        self.part_table = [['oil', 'sensitive', 'pigmentation'], # oil remove from cheek.
                            ['oil', 'sensitive', 'wrinkle'],
                            ['oil', 'sensitive', 'pigmentation', 'wrinkle'],
                            ['sensitive', 'wrinkle', 'hydration'],
                            ['oil', 'sensitive', 'pigmentation', 'wrinkle', 'hydration']]
         self.select_idx = part
         self.select_cat = cat
+        self.data = []
+        if type(data_dir) == str:
+            self.data.extend(self.load_json(data_dir))
+        elif type(data_dir) == list:
+            for dir in data_dir:
+                self.data.extend(self.load_json(dir))
         
-        self.data = self.load_json(data_dir)
         
     def load_json(self, path):
         print('load json files from {}'.format(path))
@@ -45,6 +51,26 @@ class Derma_dataset(Dataset):
                 file_name = json_data['file_name'].split('.')[0] + '.png'
             else:
                 continue
+            
+            # for cat in self.part_table[json_data['part']]:
+            #     if cat == 'oil':
+            #         if json_data[cat] == 1:
+            #             json_data[cat] = 0
+            #         elif json_data[cat] == 2:
+            #             json_data[cat] = 1
+            #         elif json_data[cat] == 3 or json_data[cat] == 4:
+            #             json_data[cat] = 2
+            #     elif cat == 'sensitive':
+            #         if json_data[cat] == 3 or json_data[cat] == 4:
+            #             json_data[cat] = 2
+            #     elif cat == 'pigmentation':
+            #         if json_data[cat] == 4:
+            #             json_data[cat] = 3
+            #     elif cat == 'wrinkle':
+            #         if json_data[cat] == 4:
+            #             json_data[cat] = 3
+            #     else:
+            #         pass
             
             if self.select_idx is not None:
                 if self.select_idx != json_data['part']:
